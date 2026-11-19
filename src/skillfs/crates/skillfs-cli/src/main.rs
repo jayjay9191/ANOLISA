@@ -3060,10 +3060,23 @@ async fn cmd_classify(
         .into());
     }
 
-    // Generate a fresh config: first N skills in "major" (default), rest in "other".
-    let n = primary_count.min(all_names.len());
-    let primary: Vec<String> = all_names[..n].to_vec();
-    let secondary: Vec<String> = all_names[n..].to_vec();
+    // Preserve alphabetical order in both views while reserving default slots for usable skills.
+    let mut primary = Vec::new();
+    let mut secondary = Vec::new();
+    let mut parse_errors = Vec::new();
+    for name in all_names {
+        if let Some(entry) = store
+            .get(&name)
+            .filter(|entry| entry.parse_status.is_error())
+        {
+            parse_errors.push((name.clone(), entry.parse_status.message()));
+            secondary.push(name);
+        } else if primary.len() < primary_count {
+            primary.push(name);
+        } else {
+            secondary.push(name);
+        }
+    }
 
     let cfg = ViewsConfig {
         views: vec![
@@ -3126,6 +3139,19 @@ async fn cmd_classify(
         }
         println!();
         println!("Edit skillfs-views.toml to move skills between views as needed.");
+    }
+
+    let assignment = if dry_run {
+        "Would assign it to"
+    } else {
+        "Assigned it to"
+    };
+    for (name, reason) in parse_errors {
+        eprintln!(
+            "warning: skill '{}' has a parse error ({}). {assignment} secondary view 'other'.",
+            escape_ctl_stderr(&name),
+            escape_ctl_stderr(reason)
+        );
     }
 
     Ok(())
